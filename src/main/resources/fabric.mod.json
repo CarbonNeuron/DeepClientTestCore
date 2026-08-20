@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "deepclient",
+  "version": "${version}",
+  "name": "Deep Client Test Core",
+  "description": "A remotely controlled Minecraft client for automated server testing.",
+  "authors": ["Deep Client Test Core contributors"],
+  "contact": {
+    "homepage": "https://github.com/CarbonNeuron/DeepClientTestCore",
+    "sources": "https://github.com/CarbonNeuron/DeepClientTestCore",
+    "issues": "https://github.com/CarbonNeuron/DeepClientTestCore/issues"
+  },
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "dev.deepclient.DeepClientMod"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "fabric-api": "*",
+    "baritone": ">=1.11.2"
+  }
+}

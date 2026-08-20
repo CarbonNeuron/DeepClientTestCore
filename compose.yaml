@@ -1,0 +1,37 @@
+x-deepclient: &deepclient
+  build: .
+  shm_size: 1gb
+  environment: &deepclient-environment
+    DEEPCLIENT_BIND: 0.0.0.0
+    DEEPCLIENT_TOKEN: ${DEEPCLIENT_TOKEN:?Set DEEPCLIENT_TOKEN in .env}
+    DEEPCLIENT_STREAM_FPS: 4
+    MINECRAFT_WIDTH: 1280
+    MINECRAFT_HEIGHT: 720
+  restart: unless-stopped
+
+services:
+  client-1:
+    <<: *deepclient
+    environment:
+      <<: *deepclient-environment
+      MINECRAFT_USERNAME: DeepClient1
+    ports:
+      - "127.0.0.1:8081:8080"
+      - "127.0.0.1:6081:6080"
+    volumes:
+      - client-1-run:/app/run
+
+  client-2:
+    <<: *deepclient
+    environment:
+      <<: *deepclient-environment
+      MINECRAFT_USERNAME: DeepClient2
+    ports:
+      - "127.0.0.1:8082:8080"
+      - "127.0.0.1:6082:6080"
+    volumes:
+      - client-2-run:/app/run
+
+volumes:
+  client-1-run:
+  client-2-run:

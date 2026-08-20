@@ -1,0 +1,305 @@
+openapi: 3.1.0
+info:
+  title: Deep Client Test Core API
+  version: 0.1.0
+  description: Semantic control and visual observation of a Minecraft Fabric client.
+servers:
+  - url: http://127.0.0.1:8080
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    ActionResult:
+      type: object
+      required: [ok, type, tick]
+      properties:
+        ok: { type: boolean }
+        type: { type: string }
+        tick: { type: integer }
+    Position:
+      type: object
+      required: [x, y, z, block_x, block_y, block_z, yaw, pitch, dimension, on_ground]
+      properties:
+        x: { type: number }
+        y: { type: number }
+        z: { type: number }
+        block_x: { type: integer }
+        block_y: { type: integer }
+        block_z: { type: integer }
+        yaw: { type: number }
+        pitch: { type: number }
+        dimension: { type: string }
+        on_ground: { type: boolean }
+    WalkToRequest:
+      type: object
+      required: [x, y, z]
+      properties:
+        x: { type: integer }
+        y: { type: integer }
+        z: { type: integer }
+        radius: { type: integer, minimum: 0, maximum: 32, default: 0 }
+    InputAction:
+      type: object
+      required: [type, inputs]
+      properties:
+        type: { const: input }
+        inputs:
+          type: object
+          properties:
+            forward: { type: boolean }
+            back: { type: boolean }
+            left: { type: boolean }
+            right: { type: boolean }
+            jump: { type: boolean }
+            sneak: { type: boolean }
+            sprint: { type: boolean }
+            attack: { type: boolean }
+            use: { type: boolean }
+            drop: { type: boolean }
+    PulseAction:
+      type: object
+      required: [type, input]
+      properties:
+        type: { const: pulse }
+        input:
+          enum: [forward, back, left, right, jump, sneak, sprint, attack, use, drop, inventory, swap_hands, pick, chat, player_list, command, social, screenshot, perspective, smooth_camera, fullscreen, spectator_outlines, advancements, save_toolbar, load_toolbar, hotbar_1, hotbar_2, hotbar_3, hotbar_4, hotbar_5, hotbar_6, hotbar_7, hotbar_8, hotbar_9]
+        ticks: { type: integer, minimum: 1, maximum: 1200, default: 1 }
+    LookAction:
+      type: object
+      required: [type]
+      properties:
+        type: { const: look }
+        yaw: { type: number }
+        pitch: { type: number, minimum: -90, maximum: 90 }
+        delta_yaw: { type: number }
+        delta_pitch: { type: number }
+    ChatAction:
+      type: object
+      required: [type, message]
+      properties:
+        type: { const: chat }
+        message: { type: string }
+    SelectSlotAction:
+      type: object
+      required: [type, slot]
+      properties:
+        type: { const: select_slot }
+        slot: { type: integer, minimum: 0, maximum: 8 }
+    GuiClickAction:
+      type: object
+      required: [type, x, y]
+      properties:
+        type: { const: gui_click }
+        x: { type: number, description: Scaled GUI x coordinate reported by state.window }
+        y: { type: number, description: Scaled GUI y coordinate reported by state.window }
+        button: { type: integer, minimum: 0, maximum: 2, default: 0 }
+        action: { enum: [click, press, release], default: click }
+    GuiKeyAction:
+      type: object
+      required: [type, keycode]
+      properties:
+        type: { const: gui_key }
+        keycode: { type: integer, description: GLFW key code }
+        scancode: { type: integer, default: 0 }
+        modifiers: { type: integer, default: 0 }
+        action: { enum: [press, release], default: press }
+    GuiTypeAction:
+      type: object
+      required: [type, text]
+      properties:
+        type: { const: gui_type }
+        text: { type: string }
+        modifiers: { type: integer, default: 0 }
+    GuiPointerAction:
+      type: object
+      required: [type, x, y]
+      properties:
+        type: { enum: [gui_move, gui_scroll, gui_drag] }
+        x: { type: number }
+        y: { type: number }
+        horizontal: { type: number, default: 0 }
+        vertical: { type: number }
+        delta_x: { type: number }
+        delta_y: { type: number }
+        button: { type: integer, minimum: 0, maximum: 2, default: 0 }
+    BlockAction:
+      type: object
+      required: [type, x, y, z]
+      properties:
+        type: { enum: [use_block, start_break_block] }
+        x: { type: integer }
+        y: { type: integer }
+        z: { type: integer }
+        side: { enum: [down, up, north, south, west, east], default: up }
+        hand: { enum: [main_hand, off_hand], default: main_hand }
+        hit_x: { type: number }
+        hit_y: { type: number }
+        hit_z: { type: number }
+    EntityAction:
+      type: object
+      required: [type, entity_id]
+      properties:
+        type: { enum: [attack_entity, interact_entity] }
+        entity_id: { type: integer }
+        hand: { enum: [main_hand, off_hand], default: main_hand }
+    ContainerClickAction:
+      type: object
+      required: [type, slot, action]
+      properties:
+        type: { const: container_click }
+        slot: { type: integer, description: Screen-handler slot ID returned by /v1/screen }
+        button: { type: integer, default: 0 }
+        action: { enum: [pickup, quick_move, swap, clone, throw, quick_craft, pickup_all] }
+    ConnectAction:
+      type: object
+      required: [type, address]
+      properties:
+        type: { const: connect }
+        address: { type: string, examples: ["host.docker.internal:25565"] }
+    SimpleAction:
+      type: object
+      required: [type]
+      properties:
+        type: { enum: [release_all, disconnect, close_screen, clear_events, open_inventory, open_chat, stop_break_block, stop_using_item, respawn, swing_hand] }
+    GenericAction:
+      type: object
+      required: [type]
+      description: Additional action documented by GET /v1/capabilities; unknown fields depend on the action type.
+      properties:
+        type: { enum: [look_at, scroll_hotbar, container_button, use_item, drop_item] }
+paths:
+  /v1/health:
+    get:
+      summary: Liveness check; authentication is not required
+      responses:
+        "200": { description: Service is alive }
+  /v1/state:
+    get:
+      summary: Read client, player, world, inventory, target, nearby entities, and recent message events
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Current observation }
+  /v1/capabilities:
+    get:
+      summary: Enumerate supported action, input, and container-operation names
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Capability manifest }
+  /v1/player/position:
+    get:
+      summary: Read only the player's precise and block position, orientation, and dimension
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Current player position
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Position" }
+        "409": { description: The client is not in a world }
+  /v1/players:
+    get:
+      summary: List server-tab players with UUID, display name, game mode, and latency
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Connected players }
+  /v1/screen:
+    get:
+      summary: Read the current screen handler, cursor stack, and every addressable slot
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Current GUI and container state }
+  /v1/world/block:
+    get:
+      summary: Inspect one loaded block
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: x, in: query, required: true, schema: { type: integer } }
+        - { name: y, in: query, required: true, schema: { type: integer } }
+        - { name: z, in: query, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: Block identity and properties }
+  /v1/chat:
+    get:
+      summary: Read the most recent player chat, server, system, and action-bar messages
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: after
+          in: query
+          description: Return only messages with a sequence greater than this value
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        "200": { description: Recent messages in chronological order }
+  /v1/navigation/walk-to:
+    post:
+      summary: Start a Baritone pathfinding job, replacing any active job
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WalkToRequest" }
+      responses:
+        "202": { description: Navigation job started }
+  /v1/navigation:
+    get:
+      summary: Read current navigation job status
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Navigation status, target, position, distance, and optional ETA }
+    delete:
+      summary: Cancel the current navigation job
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Navigation status after cancellation }
+  /v1/screenshot:
+    get:
+      summary: Capture the currently rendered framebuffer as PNG
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: PNG framebuffer
+          content:
+            image/png: {}
+  /v1/stream.mjpeg:
+    get:
+      summary: Stream rendered frames as multipart MJPEG-compatible image data
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Multipart stream of JPEG frames
+  /v1/actions:
+    post:
+      summary: Execute one semantic game action on the Minecraft client thread
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/InputAction"
+                - $ref: "#/components/schemas/PulseAction"
+                - $ref: "#/components/schemas/LookAction"
+                - $ref: "#/components/schemas/ChatAction"
+                - $ref: "#/components/schemas/SelectSlotAction"
+                - $ref: "#/components/schemas/GuiClickAction"
+                - $ref: "#/components/schemas/GuiKeyAction"
+                - $ref: "#/components/schemas/GuiTypeAction"
+                - $ref: "#/components/schemas/GuiPointerAction"
+                - $ref: "#/components/schemas/BlockAction"
+                - $ref: "#/components/schemas/EntityAction"
+                - $ref: "#/components/schemas/ContainerClickAction"
+                - $ref: "#/components/schemas/ConnectAction"
+                - $ref: "#/components/schemas/SimpleAction"
+                - $ref: "#/components/schemas/GenericAction"
+      responses:
+        "200":
+          description: Action accepted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActionResult" }
