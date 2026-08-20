@@ -6,4 +6,6 @@ Non-loopback API binding requires `DEEPCLIENT_TOKEN`. The example Compose file b
 
 The session manager mounts the Docker Engine socket so it can create and destroy client containers. Access to that socket is equivalent to root access on the Docker host. Do not run untrusted manager images, and do not expose the manager to untrusted users even when bearer authentication is enabled.
 
+The `wsl-dxg` GPU mode shares the host's WSLg X11 socket with client containers. Only use trusted client images in this mode because an X11 client may be able to observe or inject input into other applications on that display.
+
 Please report vulnerabilities privately through GitHub's security-advisory interface instead of opening a public issue.

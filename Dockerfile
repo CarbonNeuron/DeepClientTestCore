@@ -12,10 +12,12 @@ RUN apt-get update \
         libxrender1 \
         libxtst6 \
         libxxf86vm1 \
+        mesa-utils \
         novnc \
         websockify \
         x11-utils \
         x11vnc \
+        xdotool \
         xvfb \
     && rm -rf /var/lib/apt/lists/*
 

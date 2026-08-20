@@ -163,14 +163,16 @@ GPU sessions are opt-in twice: configure the manager's `DEEPCLIENT_GPU_MODE`, th
 
 - `dri` — AMD/Intel Mesa on a native Linux Docker host using `/dev/dri`;
 - `nvidia` — NVIDIA Container Toolkit using a Docker GPU device request;
-- `wsl-dxg` — experimental direct-WSL setup using `/dev/dxg` and `/usr/lib/wsl`;
+- `wsl-dxg` — WSLg/D3D12 using `/dev/dxg`, the WSL driver libraries, and the WSLg display;
 - `none` — the safe default, using Mesa llvmpipe software rendering.
 
-HIP/ROCm accelerates compute workloads, but Minecraft renders through OpenGL; HIP by itself does not accelerate this client. For an AMD GPU, the relevant rendering path is Mesa via `/dev/dri` on Linux or the experimental D3D12 Mesa driver through `/dev/dxg` in WSL. If ROCm needs an architecture override to discover your GPU, set the GPU-specific `DEEPCLIENT_HSA_OVERRIDE_GFX_VERSION` (for example `10.3.0`); the manager forwards it as `HSA_OVERRIDE_GFX_VERSION`. `DEEPCLIENT_MESA_D3D12_ADAPTER_NAME` independently selects the D3D12 rendering adapter and defaults to `AMD`.
+For AMD on Windows with Docker Desktop and WSLg, set `DEEPCLIENT_GPU_MODE=wsl-dxg` in `.env`, run `docker compose up --build`, and enable **Use GPU** when creating the session. API callers should include `"gpu":true` in the session creation body. No `HSA_OVERRIDE_GFX_VERSION` is needed when `rocminfo` already detects the card with `HSA_ENABLE_DXG_DETECTION=1`.
 
-Docker Desktop may not pass an AMD adapter into its Linux VM even when the surrounding WSL distro can see it. In that case, run the Docker Engine inside that WSL distro or retain software rendering. Xvfb may also choose llvmpipe despite a visible GPU, so verify the real result in `GET .../client/v1/state` under `graphics.renderer` rather than assuming device exposure worked.
+HIP/ROCm accelerates compute workloads, but Minecraft renders through OpenGL; HIP by itself does not accelerate this client. For an AMD GPU, the relevant rendering path is Mesa via `/dev/dri` on Linux or the D3D12 Mesa driver through `/dev/dxg` and WSLg. The `wsl-dxg` mode automatically sets `HSA_ENABLE_DXG_DETECTION=1`. If ROCm additionally needs an architecture override, set the GPU-specific `DEEPCLIENT_HSA_OVERRIDE_GFX_VERSION` (for example `10.3.0`); the manager forwards it as `HSA_OVERRIDE_GFX_VERSION`. `DEEPCLIENT_MESA_D3D12_ADAPTER_NAME` independently selects the D3D12 rendering adapter and defaults to `AMD`.
 
-On the current Windows Docker Desktop host used for development, the NVIDIA runtime exists but reports `WSL environment detected but no adapters were found`; therefore this repository does not enable GPU mode by default.
+The WSL mode shares WSLg's X11 socket because Xvfb cannot use the D3D12 renderer. Each noVNC server captures only its own Minecraft window. This means GPU client windows may also be visible through WSLg on the Windows desktop, and trusted client containers can access the shared WSLg display. Do not run untrusted client images.
+
+The RX 7800 XT development host has been verified end to end: Minecraft reports `D3D12 (AMD Radeon RX 7800 XT)` and framebuffer capture remains functional. Verify your result in `GET .../client/v1/state` under `graphics.renderer`; a value containing `llvmpipe` means it fell back to CPU rendering.
 
 The browser view is noVNC; screenshots and dashboard frames come directly from Minecraft's framebuffer.
 
@@ -199,7 +201,7 @@ Manager configuration:
 | `DEEPCLIENT_SESSION_IMAGES` | `1.21.1=deep-client-test-core:1.21.1` | Allowed version-to-image mappings |
 | `DEEPCLIENT_SESSION_IDLE_TTL` | `30m` | Inactivity duration before teardown |
 | `DEEPCLIENT_CLEANUP_INTERVAL` | `30s` | Idle-session scan interval |
-| `DEEPCLIENT_GPU_MODE` | `none` | `none`, `nvidia`, `dri`, or experimental `wsl-dxg` |
+| `DEEPCLIENT_GPU_MODE` | `none` | `none`, `nvidia`, `dri`, or `wsl-dxg` |
 | `DEEPCLIENT_HSA_OVERRIDE_GFX_VERSION` | empty | Optional GPU-specific ROCm/HIP architecture override forwarded to WSL sessions |
 | `DEEPCLIENT_MESA_D3D12_ADAPTER_NAME` | `AMD` | Adapter substring used by Mesa's WSL D3D12 renderer |
 | `DEEPCLIENT_SESSION_MEMORY_BYTES` | `4294967296` | Memory limit for each client container |

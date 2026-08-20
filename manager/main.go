@@ -352,8 +352,16 @@ func (m *manager) createContainer(ctx context.Context, s *session, image string)
 			host["Devices"] = []any{map[string]any{"PathOnHost": "/dev/dri", "PathInContainer": "/dev/dri", "CgroupPermissions": "rwm"}}
 		case "wsl-dxg":
 			host["Devices"] = []any{map[string]any{"PathOnHost": "/dev/dxg", "PathInContainer": "/dev/dxg", "CgroupPermissions": "rwm"}}
-			host["Binds"] = []string{"/usr/lib/wsl:/usr/lib/wsl:ro"}
-			environment = append(environment, "LD_LIBRARY_PATH=/usr/lib/wsl/lib", "GALLIUM_DRIVER=d3d12",
+			host["Binds"] = []string{
+				"/usr/lib/wsl:/usr/lib/wsl:ro",
+				"/mnt/host/wslg/.X11-unix:/tmp/.X11-unix:rw",
+				"/mnt/host/wslg/runtime-dir:/mnt/wslg/runtime-dir:rw",
+				"/mnt/host/wslg/PulseServer:/mnt/wslg/PulseServer:rw",
+			}
+			environment = append(environment, "DEEPCLIENT_DISPLAY_BACKEND=wslg", "DISPLAY=:0",
+				"XDG_RUNTIME_DIR=/mnt/wslg/runtime-dir",
+				"PULSE_SERVER=unix:/mnt/wslg/PulseServer", "LD_LIBRARY_PATH=/usr/lib/wsl/lib",
+				"LIBGL_ALWAYS_SOFTWARE=0", "HSA_ENABLE_DXG_DETECTION=1", "GALLIUM_DRIVER=d3d12",
 				"MESA_D3D12_DEFAULT_ADAPTER_NAME="+m.cfg.mesaAdapter)
 			if m.cfg.hsaOverride != "" {
 				environment = append(environment, "HSA_OVERRIDE_GFX_VERSION="+m.cfg.hsaOverride)
