@@ -19,7 +19,7 @@ The mod exposes semantic controls and structured observations while preserving t
 - lossless PNG screenshots and a continuous multipart frame stream;
 - token-authenticated REST access, with all game access marshalled onto the client thread;
 - an Xvfb + noVNC container so humans can watch and intervene through a browser.
-- Baritone 1.11.2 pathfinding exposed as observable, cancellable navigation jobs.
+- Baritone 1.11.2 goals, mining, following, farming, exploring, building, cached-world search, settings, waypoints, path inspection, and commands exposed as structured REST resources.
 
 ## Local development
 
@@ -95,6 +95,35 @@ ffmpeg -f mpjpeg -headers "Authorization: Bearer $DEEPCLIENT_TOKEN" \
   -i http://localhost:8080/v1/stream.mjpeg \
   -c:v libx264 -pix_fmt yuv420p session.mp4
 ```
+
+The legacy `/v1/navigation` routes are convenient for walking to coordinates. The richer `/v1/baritone` API exposes typed automation and structured progress:
+
+```bash
+# Mine blocks, then inspect every process and the upcoming route
+curl -X POST -H "Authorization: Bearer $DEEPCLIENT_TOKEN" -H "Content-Type: application/json" \
+  -d '{"blocks":["minecraft:diamond_ore","minecraft:deepslate_diamond_ore"],"count":12}' \
+  http://localhost:8080/v1/baritone/mine
+curl -H "Authorization: Bearer $DEEPCLIENT_TOKEN" http://localhost:8080/v1/baritone
+curl -H "Authorization: Bearer $DEEPCLIENT_TOKEN" "http://localhost:8080/v1/baritone/path?limit=100"
+
+# Query Baritone's loaded/cached world index without moving
+curl -X POST -H "Authorization: Bearer $DEEPCLIENT_TOKEN" -H "Content-Type: application/json" \
+  -d '{"blocks":["minecraft:ancient_debris"],"chunk_radius":32,"limit":128}' \
+  http://localhost:8080/v1/baritone/scan
+
+# Save a waypoint at the current position and later navigate back to it
+curl -X POST -H "Authorization: Bearer $DEEPCLIENT_TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"test-spawn","tag":"user"}' http://localhost:8080/v1/baritone/waypoints
+curl -X POST -H "Authorization: Bearer $DEEPCLIENT_TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"test-spawn"}' http://localhost:8080/v1/baritone/waypoints/navigate
+
+# Inspect and update scalar pathing policy; null restores a default
+curl -H "Authorization: Bearer $DEEPCLIENT_TOKEN" http://localhost:8080/v1/baritone/settings
+curl -X PATCH -H "Authorization: Bearer $DEEPCLIENT_TOKEN" -H "Content-Type: application/json" \
+  -d '{"allowSprint":true,"allowBreak":false}' http://localhost:8080/v1/baritone/settings
+```
+
+Typed routes also cover `goal` (block, near, XZ, Y-level, run-away, and composite goals), `get-to-block`, `follow`, `farm`, `explore`, and `clear-area`. `GET /v1/baritone/commands` provides a discoverable command catalog; `POST /v1/baritone/command` is the authenticated fallback for installed Baritone features without a typed route. `DELETE /v1/baritone` cancels every process.
 
 The complete machine-readable contract is in [`openapi.yaml`](openapi.yaml) and is also served by each client at `/openapi.yaml`.
 
@@ -226,6 +255,6 @@ Manager configuration:
 
 ## Scope and roadmap
 
-The current API covers normal gameplay through semantic actions plus raw screen input as a fallback for vanilla and custom GUIs. Baritone supplies long-distance movement. REST keeps actions small and deterministic so an agent can observe after every action and recover from mistakes.
+The current API covers normal gameplay through semantic actions plus raw screen input as a fallback for vanilla and custom GUIs. Baritone adds higher-level goals and structured world knowledge. REST keeps actions small and deterministic so an agent can observe after every action and recover from mistakes.
 
 Likely next layers are a WebSocket event channel, richer world/chunk queries, recipe and trade helpers, audio capture, and a lower-bandwidth H.264 or WebRTC stream. See the public issue tracker for active work.

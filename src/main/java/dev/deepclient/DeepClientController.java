@@ -55,7 +55,7 @@ public final class DeepClientController {
             "hotbar_1", "hotbar_2", "hotbar_3", "hotbar_4", "hotbar_5", "hotbar_6", "hotbar_7", "hotbar_8", "hotbar_9");
 
     private final DeepClientConfig config;
-    private final DeepClientNavigation navigation = new DeepClientNavigation();
+    private final DeepClientBaritone navigation = new DeepClientBaritone();
     private final Map<String, Boolean> heldInputs = new LinkedHashMap<>();
     private final Map<String, Integer> pulsedInputs = new LinkedHashMap<>();
     private final Deque<JsonObject> events = new ArrayDeque<>();
@@ -152,6 +152,102 @@ public final class DeepClientController {
         return onClientThread(() -> navigation.status(MinecraftClient.getInstance(), clientTicks));
     }
 
+    public JsonObject baritoneGoal(JsonObject request) throws Exception {
+        return onClientThread(() -> {
+            releaseAll();
+            return navigation.setGoal(MinecraftClient.getInstance(), request, clientTicks);
+        });
+    }
+
+    public JsonObject baritoneMine(JsonObject request) throws Exception {
+        return onClientThread(() -> {
+            releaseAll();
+            return navigation.mine(MinecraftClient.getInstance(), request, clientTicks);
+        });
+    }
+
+    public JsonObject baritoneGetToBlock(JsonObject request) throws Exception {
+        return onClientThread(() -> {
+            releaseAll();
+            return navigation.getToBlock(MinecraftClient.getInstance(), request, clientTicks);
+        });
+    }
+
+    public JsonObject baritoneFollow(JsonObject request) throws Exception {
+        return onClientThread(() -> {
+            releaseAll();
+            return navigation.follow(MinecraftClient.getInstance(), request, clientTicks);
+        });
+    }
+
+    public JsonObject baritoneFarm(JsonObject request) throws Exception {
+        return onClientThread(() -> {
+            releaseAll();
+            return navigation.farm(MinecraftClient.getInstance(), request, clientTicks);
+        });
+    }
+
+    public JsonObject baritoneExplore(JsonObject request) throws Exception {
+        return onClientThread(() -> {
+            releaseAll();
+            return navigation.explore(MinecraftClient.getInstance(), request, clientTicks);
+        });
+    }
+
+    public JsonObject baritoneClearArea(JsonObject request) throws Exception {
+        return onClientThread(() -> {
+            releaseAll();
+            return navigation.clearArea(MinecraftClient.getInstance(), request, clientTicks);
+        });
+    }
+
+    public JsonObject baritoneCommand(JsonObject request) throws Exception {
+        return onClientThread(() -> {
+            releaseAll();
+            return navigation.executeCommand(MinecraftClient.getInstance(), request, clientTicks);
+        });
+    }
+
+    public JsonObject baritoneCommands() throws Exception {
+        return onClientThread(() -> navigation.commands(MinecraftClient.getInstance()));
+    }
+
+    public JsonObject baritoneScan(JsonObject request) throws Exception {
+        // Baritone's scanner may wait on chunk/cache workers and must not block the render thread.
+        return navigation.scan(MinecraftClient.getInstance(), request);
+    }
+
+    public JsonObject baritoneSettings() throws Exception {
+        return onClientThread(navigation::settings);
+    }
+
+    public JsonObject updateBaritoneSettings(JsonObject request) throws Exception {
+        return onClientThread(() -> navigation.updateSettings(request));
+    }
+
+    public JsonObject baritoneWaypoints() throws Exception {
+        return onClientThread(() -> navigation.waypoints(MinecraftClient.getInstance()));
+    }
+
+    public JsonObject addBaritoneWaypoint(JsonObject request) throws Exception {
+        return onClientThread(() -> navigation.addWaypoint(MinecraftClient.getInstance(), request));
+    }
+
+    public JsonObject removeBaritoneWaypoint(JsonObject request) throws Exception {
+        return onClientThread(() -> navigation.removeWaypoint(MinecraftClient.getInstance(), request));
+    }
+
+    public JsonObject navigateBaritoneWaypoint(JsonObject request) throws Exception {
+        return onClientThread(() -> {
+            releaseAll();
+            return navigation.navigateWaypoint(MinecraftClient.getInstance(), request, clientTicks);
+        });
+    }
+
+    public JsonObject baritonePath(int limit) throws Exception {
+        return onClientThread(() -> navigation.path(MinecraftClient.getInstance(), limit));
+    }
+
     public JsonObject screenState() throws Exception {
         return onClientThread(() -> buildScreenState(MinecraftClient.getInstance()));
     }
@@ -192,6 +288,10 @@ public final class DeepClientController {
         JsonArray slotActions = new JsonArray();
         for (SlotActionType action : SlotActionType.values()) slotActions.add(action.name().toLowerCase());
         result.add("slot_actions", slotActions);
+        JsonArray baritone = new JsonArray();
+        List.of("goal", "mine", "get_to_block", "follow", "farm", "explore", "clear_area", "scan",
+                "path", "settings", "waypoints", "commands", "command", "cancel").forEach(baritone::add);
+        result.add("baritone", baritone);
         return result;
     }
 
@@ -658,8 +758,13 @@ public final class DeepClientController {
         ScreenHandler handler = client.player.currentScreenHandler;
         result.addProperty("sync_id", handler.syncId);
         result.addProperty("revision", handler.getRevision());
-        result.addProperty("handler_type", handler.getType() == null ? "player" :
-                Registries.SCREEN_HANDLER.getId(handler.getType()).toString());
+        String handlerType = "player";
+        try {
+            if (handler.getType() != null) handlerType = Registries.SCREEN_HANDLER.getId(handler.getType()).toString();
+        } catch (UnsupportedOperationException ignored) {
+            // PlayerScreenHandler deliberately has no registered constructor/type.
+        }
+        result.addProperty("handler_type", handlerType);
         result.add("cursor_stack", item(handler.getCursorStack()));
         JsonArray slots = new JsonArray();
         for (Slot slot : handler.slots) {

@@ -118,6 +118,10 @@ paths:
       summary: Proxy a mutation to the session's client API
       responses:
         "200": { description: Response from the client API }
+    patch:
+      summary: Proxy a partial update to the session's client API
+      responses:
+        "200": { description: Response from the client API }
     delete:
       summary: Proxy a DELETE to the session's client API
       responses:

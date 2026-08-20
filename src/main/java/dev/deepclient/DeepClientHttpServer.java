@@ -55,6 +55,21 @@ public final class DeepClientHttpServer {
         server.createContext("/v1/chat", exchange -> route(exchange, true, this::chat));
         server.createContext("/v1/navigation/walk-to", exchange -> route(exchange, true, this::walkTo));
         server.createContext("/v1/navigation", exchange -> route(exchange, true, this::navigation));
+        server.createContext("/v1/baritone/goal", exchange -> route(exchange, true, this::baritoneGoal));
+        server.createContext("/v1/baritone/mine", exchange -> route(exchange, true, this::baritoneMine));
+        server.createContext("/v1/baritone/get-to-block", exchange -> route(exchange, true, this::baritoneGetToBlock));
+        server.createContext("/v1/baritone/follow", exchange -> route(exchange, true, this::baritoneFollow));
+        server.createContext("/v1/baritone/farm", exchange -> route(exchange, true, this::baritoneFarm));
+        server.createContext("/v1/baritone/explore", exchange -> route(exchange, true, this::baritoneExplore));
+        server.createContext("/v1/baritone/clear-area", exchange -> route(exchange, true, this::baritoneClearArea));
+        server.createContext("/v1/baritone/scan", exchange -> route(exchange, true, this::baritoneScan));
+        server.createContext("/v1/baritone/path", exchange -> route(exchange, true, this::baritonePath));
+        server.createContext("/v1/baritone/settings", exchange -> route(exchange, true, this::baritoneSettings));
+        server.createContext("/v1/baritone/waypoints/navigate", exchange -> route(exchange, true, this::baritoneNavigateWaypoint));
+        server.createContext("/v1/baritone/waypoints", exchange -> route(exchange, true, this::baritoneWaypoints));
+        server.createContext("/v1/baritone/commands", exchange -> route(exchange, true, this::baritoneCommands));
+        server.createContext("/v1/baritone/command", exchange -> route(exchange, true, this::baritoneCommand));
+        server.createContext("/v1/baritone", exchange -> route(exchange, true, this::baritone));
         server.createContext("/v1/screenshot", exchange -> route(exchange, true, this::screenshot));
         server.createContext("/v1/stream.mjpeg", exchange -> route(exchange, true, this::stream));
         server.createContext("/v1/actions", exchange -> route(exchange, true, this::action));
@@ -152,6 +167,95 @@ public final class DeepClientHttpServer {
             case "DELETE" -> sendJson(exchange, 200, controller.cancelNavigation());
             default -> throw new IllegalArgumentException("Expected GET or DELETE request");
         }
+    }
+
+    private void baritone(HttpExchange exchange) throws Exception {
+        if (!"/v1/baritone".equals(exchange.getRequestURI().getPath())) {
+            sendError(exchange, 404, "not_found", "Baritone route not found");
+            return;
+        }
+        switch (exchange.getRequestMethod()) {
+            case "GET" -> sendJson(exchange, 200, controller.navigationStatus());
+            case "DELETE" -> sendJson(exchange, 200, controller.cancelNavigation());
+            default -> throw new IllegalArgumentException("Expected GET or DELETE request");
+        }
+    }
+
+    private void baritoneGoal(HttpExchange exchange) throws Exception {
+        requireMethod(exchange, "POST");
+        sendJson(exchange, 202, controller.baritoneGoal(readJsonBody(exchange)));
+    }
+
+    private void baritoneMine(HttpExchange exchange) throws Exception {
+        requireMethod(exchange, "POST");
+        sendJson(exchange, 202, controller.baritoneMine(readJsonBody(exchange)));
+    }
+
+    private void baritoneGetToBlock(HttpExchange exchange) throws Exception {
+        requireMethod(exchange, "POST");
+        sendJson(exchange, 202, controller.baritoneGetToBlock(readJsonBody(exchange)));
+    }
+
+    private void baritoneFollow(HttpExchange exchange) throws Exception {
+        requireMethod(exchange, "POST");
+        sendJson(exchange, 202, controller.baritoneFollow(readJsonBody(exchange)));
+    }
+
+    private void baritoneFarm(HttpExchange exchange) throws Exception {
+        requireMethod(exchange, "POST");
+        sendJson(exchange, 202, controller.baritoneFarm(readJsonBody(exchange)));
+    }
+
+    private void baritoneExplore(HttpExchange exchange) throws Exception {
+        requireMethod(exchange, "POST");
+        sendJson(exchange, 202, controller.baritoneExplore(readJsonBody(exchange)));
+    }
+
+    private void baritoneClearArea(HttpExchange exchange) throws Exception {
+        requireMethod(exchange, "POST");
+        sendJson(exchange, 202, controller.baritoneClearArea(readJsonBody(exchange)));
+    }
+
+    private void baritoneScan(HttpExchange exchange) throws Exception {
+        requireMethod(exchange, "POST");
+        sendJson(exchange, 200, controller.baritoneScan(readJsonBody(exchange)));
+    }
+
+    private void baritonePath(HttpExchange exchange) throws Exception {
+        requireMethod(exchange, "GET");
+        sendJson(exchange, 200, controller.baritonePath(integerQuery(query(exchange), "limit", 256, 1, 1024)));
+    }
+
+    private void baritoneSettings(HttpExchange exchange) throws Exception {
+        switch (exchange.getRequestMethod()) {
+            case "GET" -> sendJson(exchange, 200, controller.baritoneSettings());
+            case "PATCH" -> sendJson(exchange, 200, controller.updateBaritoneSettings(readJsonBody(exchange)));
+            default -> throw new IllegalArgumentException("Expected GET or PATCH request");
+        }
+    }
+
+    private void baritoneWaypoints(HttpExchange exchange) throws Exception {
+        switch (exchange.getRequestMethod()) {
+            case "GET" -> sendJson(exchange, 200, controller.baritoneWaypoints());
+            case "POST" -> sendJson(exchange, 201, controller.addBaritoneWaypoint(readJsonBody(exchange)));
+            case "DELETE" -> sendJson(exchange, 200, controller.removeBaritoneWaypoint(readJsonBody(exchange)));
+            default -> throw new IllegalArgumentException("Expected GET, POST, or DELETE request");
+        }
+    }
+
+    private void baritoneNavigateWaypoint(HttpExchange exchange) throws Exception {
+        requireMethod(exchange, "POST");
+        sendJson(exchange, 202, controller.navigateBaritoneWaypoint(readJsonBody(exchange)));
+    }
+
+    private void baritoneCommands(HttpExchange exchange) throws Exception {
+        requireMethod(exchange, "GET");
+        sendJson(exchange, 200, controller.baritoneCommands());
+    }
+
+    private void baritoneCommand(HttpExchange exchange) throws Exception {
+        requireMethod(exchange, "POST");
+        sendJson(exchange, 202, controller.baritoneCommand(readJsonBody(exchange)));
     }
 
     private void openApi(HttpExchange exchange) throws IOException {
@@ -321,7 +425,7 @@ public final class DeepClientHttpServer {
     private static void addCommonHeaders(Headers headers) {
         headers.set("Access-Control-Allow-Origin", "*");
         headers.set("Access-Control-Allow-Headers", "Authorization, Content-Type");
-        headers.set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+        headers.set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
         headers.set("X-Content-Type-Options", "nosniff");
     }
 

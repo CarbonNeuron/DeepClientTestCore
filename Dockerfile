@@ -23,12 +23,13 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY gradlew gradlew.bat settings.gradle build.gradle gradle.properties LICENSE openapi.yaml ./
+COPY gradlew gradlew.bat settings.gradle build.gradle gradle.properties ./
 COPY gradle ./gradle
 RUN chmod +x gradlew \
     && ./gradlew --no-daemon dependencies \
     && ./gradlew --no-daemon downloadAssets
 
+COPY LICENSE openapi.yaml ./
 COPY src ./src
 RUN ./gradlew --no-daemon build
 
