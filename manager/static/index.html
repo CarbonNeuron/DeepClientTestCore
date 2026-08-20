@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deep Client Sessions</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div>
+      <p class="eyebrow">CARBONNEURON</p>
+      <h1>Deep Client Sessions</h1>
+    </div>
+    <div class="connection"><span id="connection-dot"></span><span id="connection-text">Signed out</span></div>
+  </header>
+
+  <main>
+    <section id="login" class="panel login">
+      <h2>Connect to the manager</h2>
+      <p>Enter the bearer token configured as <code>DEEPCLIENT_MANAGER_TOKEN</code>. It stays in this browser tab.</p>
+      <form id="login-form">
+        <input id="token" type="password" autocomplete="current-password" placeholder="Manager token" required>
+        <button type="submit">Open dashboard</button>
+      </form>
+      <p id="login-error" class="error"></p>
+    </section>
+
+    <section id="dashboard" hidden>
+      <div class="toolbar panel">
+        <form id="create-form">
+          <label>Minecraft <select id="version"></select></label>
+          <label>Username <input id="username" maxlength="16" pattern="[A-Za-z0-9_]{3,16}" placeholder="automatic"></label>
+          <label class="check"><input id="gpu" type="checkbox"> GPU</label>
+          <button type="submit">New session</button>
+        </form>
+        <div class="toolbar-actions">
+          <span id="ttl"></span>
+          <button id="refresh" class="secondary">Refresh</button>
+          <button id="logout" class="secondary">Log out</button>
+        </div>
+      </div>
+      <p id="notice" class="notice"></p>
+      <div id="sessions" class="sessions"></div>
+      <div id="empty" class="empty panel" hidden>
+        <h2>No live clients</h2>
+        <p>Create a Minecraft session above. It will boot asynchronously and appear here as soon as the framebuffer is ready.</p>
+      </div>
+    </section>
+  </main>
+
+  <template id="session-template">
+    <article class="session panel">
+      <div class="feed"><img alt="Live Minecraft framebuffer"><div class="feed-state">Starting client…</div></div>
+      <div class="session-body">
+        <div class="session-title"><h2></h2><span class="status"></span></div>
+        <dl>
+          <div><dt>Version</dt><dd data-field="version"></dd></div>
+          <div><dt>Session</dt><dd data-field="id"></dd></div>
+          <div><dt>Last activity</dt><dd data-field="activity"></dd></div>
+          <div><dt>Acceleration</dt><dd data-field="gpu"></dd></div>
+        </dl>
+        <div class="buttons">
+          <button data-action="viewer">Open live control</button>
+          <button data-action="state" class="secondary">Inspect JSON</button>
+          <button data-action="delete" class="danger">Destroy</button>
+        </div>
+      </div>
+    </article>
+  </template>
+  <script src="/app.js"></script>
+</body>
+</html>

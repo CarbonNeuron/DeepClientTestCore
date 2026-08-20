@@ -1,0 +1,99 @@
+openapi: 3.1.0
+info:
+  title: Deep Client Session Manager API
+  version: 0.1.0
+  description: Creates, observes, proxies, and retires isolated Minecraft client sessions.
+servers:
+  - url: http://127.0.0.1:8080
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
+  schemas:
+    CreateSession:
+      type: object
+      required: [minecraft_version]
+      additionalProperties: false
+      properties:
+        minecraft_version: { type: string, examples: ["1.21.1"] }
+        username: { type: string, pattern: "^[A-Za-z0-9_]{3,16}$" }
+        gpu: { type: boolean, default: false }
+    Session:
+      type: object
+      required: [id, minecraft_version, username, gpu, status, created_at, last_active_at, expires_at, control_url, screenshot_url]
+      properties:
+        id: { type: string }
+        minecraft_version: { type: string }
+        username: { type: string }
+        gpu: { type: boolean }
+        status: { enum: [created, starting, ready, exited, dead, paused, restarting, removing, stopped] }
+        created_at: { type: string, format: date-time }
+        last_active_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        active_connections: { type: integer }
+        control_url: { type: string }
+        screenshot_url: { type: string }
+security: [{ bearerAuth: [] }]
+paths:
+  /v1/health:
+    get:
+      security: []
+      summary: Manager liveness check
+      responses:
+        "200": { description: Manager is alive }
+  /v1/versions:
+    get:
+      summary: List allowed Minecraft versions and manager capabilities
+      responses:
+        "200": { description: Version and GPU configuration }
+  /v1/sessions:
+    get:
+      summary: List managed sessions
+      responses:
+        "200": { description: Current sessions }
+    post:
+      summary: Create and asynchronously boot a client session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateSession" }
+      responses:
+        "201":
+          description: Container created; poll the session until status is ready
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+  /v1/sessions/{session_id}:
+    parameters:
+      - { name: session_id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Read session lifecycle state
+      responses:
+        "200": { description: Session state }
+    delete:
+      summary: Immediately destroy a session and its ephemeral data
+      responses:
+        "204": { description: Session destroyed }
+  /v1/sessions/{session_id}/viewer-ticket:
+    parameters:
+      - { name: session_id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Return browser URLs for the session's noVNC viewer and dashboard MJPEG feed
+      responses:
+        "200": { description: Relative viewer URL }
+  /v1/sessions/{session_id}/client/{client_path}:
+    parameters:
+      - { name: session_id, in: path, required: true, schema: { type: string } }
+      - { name: client_path, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Proxy a request to the session's client API
+      responses:
+        "200": { description: Response from the client API }
+    post:
+      summary: Proxy a mutation to the session's client API
+      responses:
+        "200": { description: Response from the client API }
+    delete:
+      summary: Proxy a DELETE to the session's client API
+      responses:
+        "200": { description: Response from the client API }

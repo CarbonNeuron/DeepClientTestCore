@@ -1,37 +1,32 @@
-x-deepclient: &deepclient
-  build: .
-  shm_size: 1gb
-  environment: &deepclient-environment
-    DEEPCLIENT_BIND: 0.0.0.0
-    DEEPCLIENT_TOKEN: ${DEEPCLIENT_TOKEN:?Set DEEPCLIENT_TOKEN in .env}
-    DEEPCLIENT_STREAM_FPS: 4
-    MINECRAFT_WIDTH: 1280
-    MINECRAFT_HEIGHT: 720
-  restart: unless-stopped
-
+name: deepclient
 services:
-  client-1:
-    <<: *deepclient
-    environment:
-      <<: *deepclient-environment
-      MINECRAFT_USERNAME: DeepClient1
-    ports:
-      - "127.0.0.1:8081:8080"
-      - "127.0.0.1:6081:6080"
-    volumes:
-      - client-1-run:/app/run
+  client-image:
+    build: .
+    image: deep-client-test-core:1.21.1
+    entrypoint: ["/bin/true"]
+    restart: "no"
 
-  client-2:
-    <<: *deepclient
+  manager:
+    build: ./manager
+    depends_on:
+      client-image:
+        condition: service_completed_successfully
     environment:
-      <<: *deepclient-environment
-      MINECRAFT_USERNAME: DeepClient2
+      DEEPCLIENT_MANAGER_TOKEN: ${DEEPCLIENT_TOKEN:?Set DEEPCLIENT_TOKEN in .env}
+      DEEPCLIENT_SESSION_IMAGES: 1.21.1=deep-client-test-core:1.21.1
+      DEEPCLIENT_SESSION_NETWORK: deepclient-sessions
+      DEEPCLIENT_SESSION_IDLE_TTL: ${DEEPCLIENT_SESSION_IDLE_TTL:-30m}
+      DEEPCLIENT_GPU_MODE: ${DEEPCLIENT_GPU_MODE:-none}
+      DEEPCLIENT_HSA_OVERRIDE_GFX_VERSION: ${DEEPCLIENT_HSA_OVERRIDE_GFX_VERSION:-}
+      DEEPCLIENT_MESA_D3D12_ADAPTER_NAME: ${DEEPCLIENT_MESA_D3D12_ADAPTER_NAME:-AMD}
     ports:
-      - "127.0.0.1:8082:8080"
-      - "127.0.0.1:6082:6080"
+      - "127.0.0.1:8080:8080"
     volumes:
-      - client-2-run:/app/run
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - sessions
+    restart: unless-stopped
 
-volumes:
-  client-1-run:
-  client-2-run:
+networks:
+  sessions:
+    name: deepclient-sessions

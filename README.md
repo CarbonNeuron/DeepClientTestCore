@@ -4,6 +4,8 @@
 
 Deep Client Test Core is a Fabric 1.21.1 client mod that turns a real rendered Minecraft client into an HTTP-controlled server test fixture. It is aimed at LLMs and automated test harnesses developing Paper, Fabric, Velocity, or other custom server software.
 
+The default deployment is Playwright-like: one session manager starts isolated Minecraft clients on demand, returns a session ID immediately, proxies their APIs and viewers, and removes them after an idle timeout. Its browser dashboard shows every active client as a live framebuffer grid.
+
 The mod exposes semantic controls and structured observations while preserving the rendered game as visual ground truth:
 
 - held and tick-bounded movement, attack, use, jump, sneak, sprint, and drop inputs;
@@ -113,24 +115,64 @@ curl -X POST -H "Authorization: Bearer $DEEPCLIENT_TOKEN" \
   http://localhost:8080/v1/actions
 ```
 
-## Docker and multiple clients
+## Session manager and dashboard
 
-Copy `.env.example` to `.env`, replace the token, then start two independent clients:
+Copy `.env.example` to `.env`, replace the token, then build the versioned client image and start the manager:
 
 ```bash
 docker compose up --build
 ```
 
-| Client | REST API | Browser screen |
-| --- | --- | --- |
-| 1 | `http://localhost:8081` | `http://localhost:6081/vnc.html?autoconnect=true` |
-| 2 | `http://localhost:8082` | `http://localhost:6082/vnc.html?autoconnect=true` |
+Open `http://localhost:8080`, enter the configured token, and create clients from the dashboard. The dashboard shows each real framebuffer as a continuous MJPEG feed and opens an interactive noVNC view on demand.
 
-Compose binds these ports to host loopback. noVNC itself has no password in this development image, so keep it loopback-only or put authentication in front of it before exposing it to a network.
+The same lifecycle is available to agents:
+
+```bash
+# Create asynchronously; save the returned id
+curl -X POST -H "Authorization: Bearer $DEEPCLIENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"minecraft_version":"1.21.1","username":"TestAgent"}' \
+  http://localhost:8080/v1/sessions
+
+# Poll until status is ready
+curl -H "Authorization: Bearer $DEEPCLIENT_TOKEN" \
+  http://localhost:8080/v1/sessions/SESSION_ID
+
+# Any client endpoint is available below /client
+curl -H "Authorization: Bearer $DEEPCLIENT_TOKEN" \
+  http://localhost:8080/v1/sessions/SESSION_ID/client/v1/state
+
+# Explicit cleanup (otherwise the idle TTL handles it)
+curl -X DELETE -H "Authorization: Bearer $DEEPCLIENT_TOKEN" \
+  http://localhost:8080/v1/sessions/SESSION_ID
+```
+
+Session creation accepts only Minecraft versions mapped by `DEEPCLIENT_SESSION_IMAGES`; callers cannot choose arbitrary Docker images. Add another prebuilt version with a comma-separated mapping such as `1.21.1=image-a,1.20.4=image-b`. The manager API is documented in [`manager/openapi.yaml`](manager/openapi.yaml); the per-client API remains in [`openapi.yaml`](openapi.yaml).
+
+Proxied HTTP requests and open MJPEG/noVNC connections count as activity. The manager does not let a running stream expire underneath its caller. A manager restart discovers its labeled client containers again. Session filesystem data is ephemeral and removed with the container.
+
+Compose binds the dashboard to host loopback. The manager protects client APIs with its bearer token and gives the browser a separate unguessable viewer ticket. Keep it loopback-only or put TLS and authentication in front of it before exposing it to a network.
+
+The manager mounts `/var/run/docker.sock`, which is effectively root access to the Docker host. Run only trusted builds of the manager and never offer its API to untrusted users.
 
 Inside a container, a server running on the Docker host is normally reachable as `host.docker.internal:25565` on Docker Desktop. Put the clients and server in the same Compose network when running the test server in Docker.
 
-The image uses Mesa software rendering. For higher frame rates, adapt the image to expose the host GPU (`/dev/dri` on Linux or the NVIDIA container runtime). The browser view is noVNC; API screenshots come directly from Minecraft's framebuffer.
+### GPU acceleration
+
+GPU sessions are opt-in twice: configure the manager's `DEEPCLIENT_GPU_MODE`, then send `"gpu":true` while creating a session. Supported modes are:
+
+- `dri` — AMD/Intel Mesa on a native Linux Docker host using `/dev/dri`;
+- `nvidia` — NVIDIA Container Toolkit using a Docker GPU device request;
+- `wsl-dxg` — experimental direct-WSL setup using `/dev/dxg` and `/usr/lib/wsl`;
+- `none` — the safe default, using Mesa llvmpipe software rendering.
+
+HIP/ROCm accelerates compute workloads, but Minecraft renders through OpenGL; HIP by itself does not accelerate this client. For an AMD GPU, the relevant rendering path is Mesa via `/dev/dri` on Linux or the experimental D3D12 Mesa driver through `/dev/dxg` in WSL. If ROCm needs an architecture override to discover your GPU, set the GPU-specific `DEEPCLIENT_HSA_OVERRIDE_GFX_VERSION` (for example `10.3.0`); the manager forwards it as `HSA_OVERRIDE_GFX_VERSION`. `DEEPCLIENT_MESA_D3D12_ADAPTER_NAME` independently selects the D3D12 rendering adapter and defaults to `AMD`.
+
+Docker Desktop may not pass an AMD adapter into its Linux VM even when the surrounding WSL distro can see it. In that case, run the Docker Engine inside that WSL distro or retain software rendering. Xvfb may also choose llvmpipe despite a visible GPU, so verify the real result in `GET .../client/v1/state` under `graphics.renderer` rather than assuming device exposure worked.
+
+On the current Windows Docker Desktop host used for development, the NVIDIA runtime exists but reports `WSL environment detected but no adapters were found`; therefore this repository does not enable GPU mode by default.
+
+The browser view is noVNC; screenshots and dashboard frames come directly from Minecraft's framebuffer.
 
 The development launcher creates offline client identities. That is appropriate for isolated, `online-mode=false` test servers. Joining authenticated public/online-mode servers requires launching the built mod through a real Minecraft launcher session instead of the development launcher.
 
@@ -148,6 +190,20 @@ Baritone is an external LGPL-3.0 dependency and is deliberately not embedded in 
 | `DEEPCLIENT_NEARBY_ENTITY_LIMIT` | `64` | Maximum entities returned by state |
 | `MINECRAFT_WIDTH` / `MINECRAFT_HEIGHT` | `1280` / `720` | Container framebuffer size |
 | `MINECRAFT_USERNAME` | `DeepClient` | Offline development identity |
+
+Manager configuration:
+
+| Environment variable | Default | Meaning |
+| --- | --- | --- |
+| `DEEPCLIENT_MANAGER_TOKEN` | required | Dashboard and session API bearer token |
+| `DEEPCLIENT_SESSION_IMAGES` | `1.21.1=deep-client-test-core:1.21.1` | Allowed version-to-image mappings |
+| `DEEPCLIENT_SESSION_IDLE_TTL` | `30m` | Inactivity duration before teardown |
+| `DEEPCLIENT_CLEANUP_INTERVAL` | `30s` | Idle-session scan interval |
+| `DEEPCLIENT_GPU_MODE` | `none` | `none`, `nvidia`, `dri`, or experimental `wsl-dxg` |
+| `DEEPCLIENT_HSA_OVERRIDE_GFX_VERSION` | empty | Optional GPU-specific ROCm/HIP architecture override forwarded to WSL sessions |
+| `DEEPCLIENT_MESA_D3D12_ADAPTER_NAME` | `AMD` | Adapter substring used by Mesa's WSL D3D12 renderer |
+| `DEEPCLIENT_SESSION_MEMORY_BYTES` | `4294967296` | Memory limit for each client container |
+| `DEEPCLIENT_SESSION_NANO_CPUS` | `0` | Optional CPU limit in billionths of a CPU |
 
 ## Scope and roadmap
 
