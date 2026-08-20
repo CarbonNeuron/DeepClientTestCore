@@ -123,6 +123,8 @@ Copy `.env.example` to `.env`, replace the token, then build the versioned clien
 docker compose up --build
 ```
 
+The image build downloads the selected Minecraft version, libraries, natives, and assets once. Session startup runs Gradle offline, so creating more clients from that image does not download Minecraft again.
+
 Open `http://localhost:8080`, enter the configured token, and create clients from the dashboard. The dashboard shows each real framebuffer as a continuous MJPEG feed and opens an interactive noVNC view on demand.
 
 The same lifecycle is available to agents:
@@ -147,9 +149,24 @@ curl -X DELETE -H "Authorization: Bearer $DEEPCLIENT_TOKEN" \
   http://localhost:8080/v1/sessions/SESSION_ID
 ```
 
+Omit `profile` for an isolated disposable client, or give a session a lowercase profile name to retain its Minecraft game directory across sessions:
+
+```bash
+curl -X POST -H "Authorization: Bearer $DEEPCLIENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"minecraft_version":"1.21.1","username":"Builder","profile":"builder"}' \
+  http://localhost:8080/v1/sessions
+
+curl -H "Authorization: Bearer $DEEPCLIENT_TOKEN" http://localhost:8080/v1/profiles
+curl -X DELETE -H "Authorization: Bearer $DEEPCLIENT_TOKEN" \
+  http://localhost:8080/v1/profiles/builder
+```
+
+Profiles preserve `options.txt`, server lists, resource packs, configuration, logs, and other files under the game directory in a named Docker volume. Destroying or idling out a session keeps its named profile; deleting the profile endpoint permanently removes it. A profile is tied to one Minecraft version and can be attached to only one live session at a time.
+
 Session creation accepts only Minecraft versions mapped by `DEEPCLIENT_SESSION_IMAGES`; callers cannot choose arbitrary Docker images. Add another prebuilt version with a comma-separated mapping such as `1.21.1=image-a,1.20.4=image-b`. The manager API is documented in [`manager/openapi.yaml`](manager/openapi.yaml); the per-client API remains in [`openapi.yaml`](openapi.yaml).
 
-Proxied HTTP requests and open MJPEG/noVNC connections count as activity. The manager does not let a running stream expire underneath its caller. A manager restart discovers its labeled client containers again. Session filesystem data is ephemeral and removed with the container.
+Proxied HTTP requests and open MJPEG/noVNC connections count as activity. The manager does not let a running stream expire underneath its caller. A manager restart discovers its labeled client containers again. Unnamed session data is ephemeral and removed with the container; named profiles survive session cleanup.
 
 Compose binds the dashboard to host loopback. The manager protects client APIs with its bearer token and gives the browser a separate unguessable viewer ticket. Keep it loopback-only or put TLS and authentication in front of it before exposing it to a network.
 

@@ -16,6 +16,10 @@ components:
       properties:
         minecraft_version: { type: string, examples: ["1.21.1"] }
         username: { type: string, pattern: "^[A-Za-z0-9_]{3,16}$" }
+        profile:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9_-]{0,31}$"
+          description: Optional persistent game-directory profile. Omit for an ephemeral session.
         gpu: { type: boolean, default: false }
     Session:
       type: object
@@ -24,6 +28,7 @@ components:
         id: { type: string }
         minecraft_version: { type: string }
         username: { type: string }
+        profile: { type: string, description: Persistent profile name; omitted for ephemeral sessions }
         gpu: { type: boolean }
         status: { enum: [created, starting, ready, exited, dead, paused, restarting, removing, stopped] }
         created_at: { type: string, format: date-time }
@@ -32,6 +37,13 @@ components:
         active_connections: { type: integer }
         control_url: { type: string }
         screenshot_url: { type: string }
+    Profile:
+      type: object
+      required: [name, minecraft_version, created_at]
+      properties:
+        name: { type: string }
+        minecraft_version: { type: string }
+        created_at: { type: string, format: date-time }
 security: [{ bearerAuth: [] }]
 paths:
   /v1/health:
@@ -71,9 +83,22 @@ paths:
       responses:
         "200": { description: Session state }
     delete:
-      summary: Immediately destroy a session and its ephemeral data
+      summary: Immediately destroy a session; a named profile is retained
       responses:
         "204": { description: Session destroyed }
+  /v1/profiles:
+    get:
+      summary: List persistent client profiles
+      responses:
+        "200": { description: Persistent profiles stored as Docker volumes }
+  /v1/profiles/{profile_name}:
+    parameters:
+      - { name: profile_name, in: path, required: true, schema: { type: string } }
+    delete:
+      summary: Permanently delete a profile that is not attached to a session
+      responses:
+        "204": { description: Profile deleted }
+        "409": { description: Profile is currently in use }
   /v1/sessions/{session_id}/viewer-ticket:
     parameters:
       - { name: session_id, in: path, required: true, schema: { type: string } }

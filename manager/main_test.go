@@ -45,3 +45,24 @@ func TestSecureEqual(t *testing.T) {
 		t.Fatal("secureEqual returned an incorrect result")
 	}
 }
+
+func TestProfileReservationIsExclusive(t *testing.T) {
+	m := &manager{sessions: map[string]*session{}, profileReservations: map[string]bool{}}
+	if !m.reserveProfile("builder") {
+		t.Fatal("new profile reservation was rejected")
+	}
+	if m.reserveProfile("builder") {
+		t.Fatal("duplicate profile reservation was accepted")
+	}
+	m.releaseProfile("builder")
+	m.sessions["active"] = &session{Profile: "builder"}
+	if m.reserveProfile("builder") {
+		t.Fatal("profile attached to a session was accepted")
+	}
+}
+
+func TestProfileVolumeName(t *testing.T) {
+	if got := profileVolumeName("builder"); got != "deepclient-profile-builder" {
+		t.Fatalf("profileVolumeName() = %q", got)
+	}
+}

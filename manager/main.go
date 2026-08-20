@@ -25,7 +25,12 @@ import (
 	"time"
 )
 
-const managedLabel = "dev.deepclient.managed"
+const (
+	managedLabel          = "dev.deepclient.managed"
+	profileLabel          = "dev.deepclient.profile"
+	profileMinecraftLabel = "dev.deepclient.profile.minecraft"
+	profileCreatedLabel   = "dev.deepclient.profile.created"
+)
 
 //go:embed static/* openapi.yaml
 var staticFiles embed.FS
@@ -49,6 +54,7 @@ type session struct {
 	ID            string    `json:"id"`
 	Minecraft     string    `json:"minecraft_version"`
 	Username      string    `json:"username"`
+	Profile       string    `json:"profile,omitempty"`
 	GPU           bool      `json:"gpu"`
 	ContainerID   string    `json:"-"`
 	ContainerName string    `json:"-"`
@@ -64,6 +70,7 @@ type sessionView struct {
 	ID                string    `json:"id"`
 	Minecraft         string    `json:"minecraft_version"`
 	Username          string    `json:"username"`
+	Profile           string    `json:"profile,omitempty"`
 	GPU               bool      `json:"gpu"`
 	Status            string    `json:"status"`
 	CreatedAt         time.Time `json:"created_at"`
@@ -75,11 +82,18 @@ type sessionView struct {
 }
 
 type manager struct {
-	cfg      config
-	docker   *dockerClient
-	mu       sync.Mutex
-	sessions map[string]*session
-	static   http.Handler
+	cfg                 config
+	docker              *dockerClient
+	mu                  sync.Mutex
+	sessions            map[string]*session
+	profileReservations map[string]bool
+	static              http.Handler
+}
+
+type profileView struct {
+	Name      string    `json:"name"`
+	Minecraft string    `json:"minecraft_version"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type dockerClient struct{ http *http.Client }
@@ -104,7 +118,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	m := &manager{cfg: cfg, docker: docker, sessions: map[string]*session{}, static: http.FileServer(http.FS(staticRoot))}
+	m := &manager{cfg: cfg, docker: docker, sessions: map[string]*session{}, profileReservations: map[string]bool{}, static: http.FileServer(http.FS(staticRoot))}
 	if err := m.restore(context.Background()); err != nil {
 		log.Printf("session restore warning: %v", err)
 	}
@@ -254,8 +268,18 @@ func (m *manager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		} else {
 			writeError(w, http.StatusMethodNotAllowed, "Expected GET or POST")
 		}
+	case "/v1/profiles":
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "Expected GET")
+			return
+		}
+		m.listProfiles(w, r)
 	default:
-		m.handleSession(w, r)
+		if strings.HasPrefix(r.URL.Path, "/v1/profiles/") {
+			m.handleProfile(w, r)
+		} else {
+			m.handleSession(w, r)
+		}
 	}
 }
 
@@ -285,12 +309,16 @@ func (m *manager) listSessions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"sessions": views, "count": len(views)})
 }
 
-var usernamePattern = regexp.MustCompile(`^[A-Za-z0-9_]{3,16}$`)
+var (
+	usernamePattern = regexp.MustCompile(`^[A-Za-z0-9_]{3,16}$`)
+	profilePattern  = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
+)
 
 func (m *manager) createSession(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		Minecraft string `json:"minecraft_version"`
 		Username  string `json:"username"`
+		Profile   string `json:"profile"`
 		GPU       bool   `json:"gpu"`
 	}
 	decoder := json.NewDecoder(io.LimitReader(r.Body, 65536))
@@ -316,8 +344,23 @@ func (m *manager) createSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "username must be 3-16 letters, digits, or underscores")
 		return
 	}
+	if request.Profile != "" && !profilePattern.MatchString(request.Profile) {
+		writeError(w, http.StatusBadRequest, "profile must be 1-32 lowercase letters, digits, underscores, or hyphens")
+		return
+	}
+	if request.Profile != "" {
+		if !m.reserveProfile(request.Profile) {
+			writeError(w, http.StatusConflict, "profile is already attached to another session")
+			return
+		}
+		defer m.releaseProfile(request.Profile)
+		if err := m.ensureProfileVolume(r.Context(), request.Profile, request.Minecraft); err != nil {
+			writeError(w, http.StatusConflict, "Could not use profile: "+err.Error())
+			return
+		}
+	}
 	now := time.Now().UTC()
-	s := &session{ID: id, Minecraft: request.Minecraft, Username: request.Username, GPU: request.GPU,
+	s := &session{ID: id, Minecraft: request.Minecraft, Username: request.Username, Profile: request.Profile, GPU: request.GPU,
 		ContainerName: "deepclient-" + id, ClientToken: randomToken(32), ViewerToken: randomToken(32), CreatedAt: now, LastActive: now}
 	containerID, err := m.createContainer(r.Context(), s, image)
 	if err != nil {
@@ -342,6 +385,9 @@ func (m *manager) createContainer(ctx context.Context, s *session, image string)
 		"DEEPCLIENT_STREAM_FPS=4", "MINECRAFT_WIDTH=1280", "MINECRAFT_HEIGHT=720", "MINECRAFT_USERNAME=" + s.Username,
 	}
 	host := map[string]any{"NetworkMode": m.cfg.network, "ShmSize": m.cfg.shmBytes, "Memory": m.cfg.memory, "NanoCpus": m.cfg.nanoCPUs}
+	if s.Profile != "" {
+		host["Mounts"] = []any{map[string]any{"Type": "volume", "Source": profileVolumeName(s.Profile), "Target": "/app/run"}}
+	}
 	if s.GPU {
 		environment = append(environment, "LIBGL_ALWAYS_SOFTWARE=0")
 		switch m.cfg.gpuMode {
@@ -374,6 +420,9 @@ func (m *manager) createContainer(ctx context.Context, s *session, image string)
 		"dev.deepclient.viewer-token": s.ViewerToken, "dev.deepclient.created": s.CreatedAt.Format(time.RFC3339Nano),
 		"dev.deepclient.gpu": strconv.FormatBool(s.GPU),
 	}
+	if s.Profile != "" {
+		labels[profileLabel] = s.Profile
+	}
 	body := map[string]any{"Image": image, "Env": environment, "Labels": labels, "HostConfig": host}
 	var result struct {
 		ID string `json:"Id"`
@@ -383,6 +432,125 @@ func (m *manager) createContainer(ctx context.Context, s *session, image string)
 		return "", err
 	}
 	return result.ID, nil
+}
+
+func profileVolumeName(profile string) string {
+	return "deepclient-profile-" + profile
+}
+
+func (m *manager) reserveProfile(profile string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.profileReservations == nil {
+		m.profileReservations = map[string]bool{}
+	}
+	if m.profileReservations[profile] {
+		return false
+	}
+	for _, s := range m.sessions {
+		if s.Profile == profile {
+			return false
+		}
+	}
+	m.profileReservations[profile] = true
+	return true
+}
+
+func (m *manager) releaseProfile(profile string) {
+	m.mu.Lock()
+	delete(m.profileReservations, profile)
+	m.mu.Unlock()
+}
+
+func (m *manager) ensureProfileVolume(ctx context.Context, profile, minecraft string) error {
+	var existing struct {
+		Labels map[string]string `json:"Labels"`
+	}
+	err := m.docker.do(ctx, http.MethodGet, "/volumes/"+url.PathEscape(profileVolumeName(profile)), nil, &existing)
+	if err == nil {
+		if existing.Labels[profileLabel] != profile {
+			return errors.New("the profile volume name is already used by an unmanaged volume")
+		}
+		if existing.Labels[profileMinecraftLabel] != minecraft {
+			return fmt.Errorf("profile belongs to Minecraft %s", existing.Labels[profileMinecraftLabel])
+		}
+		return nil
+	}
+	var de *dockerError
+	if !errors.As(err, &de) || de.status != http.StatusNotFound {
+		return err
+	}
+	labels := map[string]string{
+		profileLabel:          profile,
+		profileMinecraftLabel: minecraft,
+		profileCreatedLabel:   time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	return m.docker.do(ctx, http.MethodPost, "/volumes/create", map[string]any{
+		"Name": profileVolumeName(profile), "Driver": "local", "Labels": labels,
+	}, nil)
+}
+
+func (m *manager) listProfiles(w http.ResponseWriter, r *http.Request) {
+	filters, _ := json.Marshal(map[string][]string{"label": {profileLabel}})
+	var result struct {
+		Volumes []struct {
+			Labels map[string]string `json:"Labels"`
+		} `json:"Volumes"`
+	}
+	if err := m.docker.do(r.Context(), http.MethodGet, "/volumes?filters="+url.QueryEscape(string(filters)), nil, &result); err != nil {
+		writeError(w, http.StatusBadGateway, "Could not list profiles: "+err.Error())
+		return
+	}
+	profiles := make([]profileView, 0, len(result.Volumes))
+	for _, volume := range result.Volumes {
+		created, _ := time.Parse(time.RFC3339Nano, volume.Labels[profileCreatedLabel])
+		profiles = append(profiles, profileView{Name: volume.Labels[profileLabel], Minecraft: volume.Labels[profileMinecraftLabel], CreatedAt: created})
+	}
+	sort.Slice(profiles, func(i, j int) bool { return profiles[i].Name < profiles[j].Name })
+	writeJSON(w, http.StatusOK, map[string]any{"profiles": profiles, "count": len(profiles)})
+}
+
+func (m *manager) handleProfile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		writeError(w, http.StatusMethodNotAllowed, "Expected DELETE")
+		return
+	}
+	profile := strings.TrimPrefix(r.URL.Path, "/v1/profiles/")
+	if !profilePattern.MatchString(profile) {
+		writeError(w, http.StatusBadRequest, "Invalid profile name")
+		return
+	}
+	m.mu.Lock()
+	if m.profileReservations == nil {
+		m.profileReservations = map[string]bool{}
+	}
+	inUse := m.profileReservations[profile]
+	for _, s := range m.sessions {
+		if s.Profile == profile {
+			inUse = true
+			break
+		}
+	}
+	if !inUse {
+		m.profileReservations[profile] = true
+	}
+	m.mu.Unlock()
+	if inUse {
+		writeError(w, http.StatusConflict, "Profile is attached to a session")
+		return
+	}
+	defer m.releaseProfile(profile)
+	err := m.docker.do(r.Context(), http.MethodDelete, "/volumes/"+url.PathEscape(profileVolumeName(profile)), nil, nil)
+	if err != nil {
+		var de *dockerError
+		if errors.As(err, &de) && de.status == http.StatusNotFound {
+			writeError(w, http.StatusNotFound, "Profile not found")
+		} else {
+			writeError(w, http.StatusBadGateway, "Could not delete profile: "+err.Error())
+		}
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (m *manager) handleSession(w http.ResponseWriter, r *http.Request) {
@@ -565,7 +733,7 @@ func (m *manager) view(ctx context.Context, s *session) sessionView {
 		}
 	}
 	base := "/v1/sessions/" + s.ID + "/client"
-	return sessionView{ID: s.ID, Minecraft: s.Minecraft, Username: s.Username, GPU: s.GPU, Status: status,
+	return sessionView{ID: s.ID, Minecraft: s.Minecraft, Username: s.Username, Profile: s.Profile, GPU: s.GPU, Status: status,
 		CreatedAt: s.CreatedAt, LastActive: last, ExpiresAt: last.Add(m.cfg.idleTTL), ActiveConnections: active,
 		ControlURL: base, ScreenshotURL: base + "/v1/screenshot"}
 }
@@ -660,7 +828,7 @@ func (m *manager) restore(ctx context.Context) error {
 		if len(container.Names) > 0 {
 			name = strings.TrimPrefix(container.Names[0], "/")
 		}
-		s := &session{ID: labels["dev.deepclient.session"], Minecraft: labels["dev.deepclient.minecraft"], Username: labels["dev.deepclient.username"],
+		s := &session{ID: labels["dev.deepclient.session"], Minecraft: labels["dev.deepclient.minecraft"], Username: labels["dev.deepclient.username"], Profile: labels[profileLabel],
 			GPU: labels["dev.deepclient.gpu"] == "true", ContainerID: container.ID, ContainerName: name,
 			ClientToken: labels["dev.deepclient.client-token"], ViewerToken: labels["dev.deepclient.viewer-token"], CreatedAt: created, LastActive: created}
 		if s.ID != "" && s.ClientToken != "" && s.ViewerToken != "" {

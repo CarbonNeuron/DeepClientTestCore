@@ -26,7 +26,8 @@ WORKDIR /app
 COPY gradlew gradlew.bat settings.gradle build.gradle gradle.properties LICENSE openapi.yaml ./
 COPY gradle ./gradle
 RUN chmod +x gradlew \
-    && ./gradlew --no-daemon dependencies
+    && ./gradlew --no-daemon dependencies \
+    && ./gradlew --no-daemon downloadAssets
 
 COPY src ./src
 RUN ./gradlew --no-daemon build

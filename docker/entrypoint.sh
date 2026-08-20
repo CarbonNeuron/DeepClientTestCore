@@ -40,5 +40,5 @@ fi
 
 websockify --web=/usr/share/novnc/ 6080 localhost:5900 >/tmp/novnc.log 2>&1 &
 
-exec ./gradlew --no-daemon runClient \
+exec ./gradlew --offline --no-daemon runClient \
     --args="--width ${MINECRAFT_WIDTH} --height ${MINECRAFT_HEIGHT} --username ${MINECRAFT_USERNAME}"

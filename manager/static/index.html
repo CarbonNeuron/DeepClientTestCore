@@ -31,6 +31,8 @@
         <form id="create-form">
           <label>Minecraft <select id="version"></select></label>
           <label>Username <input id="username" maxlength="16" pattern="[A-Za-z0-9_]{3,16}" placeholder="automatic"></label>
+          <label>Profile <input id="profile" maxlength="32" pattern="[a-z0-9][a-z0-9_-]{0,31}" list="profiles" placeholder="ephemeral"></label>
+          <datalist id="profiles"></datalist>
           <label class="check"><input id="gpu" type="checkbox"> GPU</label>
           <button type="submit">New session</button>
         </form>
@@ -56,6 +58,7 @@
         <div class="session-title"><h2></h2><span class="status"></span></div>
         <dl>
           <div><dt>Version</dt><dd data-field="version"></dd></div>
+          <div><dt>Profile</dt><dd data-field="profile"></dd></div>
           <div><dt>Session</dt><dd data-field="id"></dd></div>
           <div><dt>Last activity</dt><dd data-field="activity"></dd></div>
           <div><dt>Acceleration</dt><dd data-field="gpu"></dd></div>

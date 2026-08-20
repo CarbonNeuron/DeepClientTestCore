@@ -27,6 +27,7 @@ async function login(token) {
   const info = await response.json();
   sessionStorage.setItem("deepclient-token", token);
   $("#version").replaceChildren(...info.minecraft_versions.map(version => new Option(version, version)));
+  await loadProfiles();
   $("#gpu").disabled = info.gpu_mode === "none";
   $("#gpu").title = info.gpu_mode === "none" ? "GPU sessions are disabled" : `Manager GPU mode: ${info.gpu_mode}`;
   $("#ttl").textContent = `Idle cleanup: ${Math.round(info.idle_ttl_seconds / 60)} min · GPU: ${info.gpu_mode}`;
@@ -34,6 +35,12 @@ async function login(token) {
   await refresh();
   clearInterval(state.timer);
   state.timer = setInterval(refresh, 2500);
+}
+
+async function loadProfiles() {
+  const response = await api("/v1/profiles");
+  const data = await response.json();
+  $("#profiles").replaceChildren(...data.profiles.map(profile => new Option(profile.name, profile.name)));
 }
 
 async function refresh() {
@@ -67,6 +74,7 @@ function render(sessions) {
     status.textContent = session.status;
     status.className = `status ${session.status}`;
     card.querySelector('[data-field="version"]').textContent = session.minecraft_version;
+    card.querySelector('[data-field="profile"]').textContent = session.profile || "Ephemeral";
     card.querySelector('[data-field="id"]').textContent = session.id;
     card.querySelector('[data-field="activity"]').textContent = new Date(session.last_active_at).toLocaleTimeString();
     card.querySelector('[data-field="gpu"]').textContent = session.gpu ? "GPU requested" : "Software";
@@ -106,9 +114,11 @@ async function createSession(event) {
   event.preventDefault();
   const body = { minecraft_version: $("#version").value, gpu: $("#gpu").checked };
   if ($("#username").value) body.username = $("#username").value;
+  if ($("#profile").value) body.profile = $("#profile").value;
   try {
     await api("/v1/sessions", { method: "POST", body: JSON.stringify(body) });
     $("#username").value = "";
+    await loadProfiles();
     await refresh();
   } catch (error) { $("#notice").textContent = error.message; }
 }
